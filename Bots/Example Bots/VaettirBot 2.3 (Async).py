@@ -112,7 +112,7 @@ class ConfigVarsClass:
         self.loot_map_pieces = False
         self.id_blues = True
         self.id_purples = True
-        self.id_golds = False
+        self.id_golds = True
         self.salvage_whites = True
         self.salvage_blues = True
         self.salvage_purples = True
@@ -131,7 +131,7 @@ class ConfigVarsClass:
         self.sell_bones = True
         self.sell_cloth = True
         self.sell_granite = True
-        self.keep_id_kit = 0
+        self.keep_id_kit = 2
         self.keep_salvage_kit = 0
         self.keep_sup_salvage_kit = 0
         self.keep_gold_amount = 5000
@@ -522,7 +522,7 @@ def filter_salvage_array():
     if not bot_vars.config_vars.salvage_purples:
         salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsPurple(item_id))
     if not bot_vars.config_vars.salvage_golds:
-        salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsGold(item_id))
+        salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsGold(item_id) or " of the " in Item.GetName(item_id))
     return salvageable_items
 
 
