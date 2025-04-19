@@ -4,6 +4,16 @@ module_name = "Vaettir Bot"
 
 #region coords
 
+cupcake = 22269
+golden_egg = 22752
+lockpick = 22751
+black_dye = 10
+white_dye = 12
+victory_token = 18345
+
+goodies = [cupcake, golden_egg, lockpick, black_dye, white_dye, victory_token]
+
+
 outpost_coord_list = [(-24380, 15074), (-26375, 16180)]
 
 bjora_coord_list = [
@@ -88,14 +98,14 @@ class WindowStatistics:
 
 class ConfigVarsClass:
     def __init__(self):
-        self.loot_blues = True
-        self.loot_purples = True
+        self.loot_blues = False
+        self.loot_purples = False
         self.loot_golds = True
         self.loot_tomes = True
         self.loot_white_dyes = True
         self.loot_black_dyes = True
         self.loot_lockpicks = True
-        self.loot_whites = True
+        self.loot_whites = False
         self.loot_dyes = True
         self.loot_glacial_stones = True
         self.loot_event_items = True
@@ -121,11 +131,11 @@ class ConfigVarsClass:
         self.sell_bones = True
         self.sell_cloth = True
         self.sell_granite = True
-        self.keep_id_kit = 2
-        self.keep_salvage_kit = 5
+        self.keep_id_kit = 0
+        self.keep_salvage_kit = 0
         self.keep_sup_salvage_kit = 0
         self.keep_gold_amount = 5000
-        self.leave_empty_inventory_slots = 4
+        self.leave_empty_inventory_slots = 2
 
 class BotVars:
     def __init__(self, map_id=0):
@@ -333,7 +343,7 @@ def get_filtered_loot_array():
         
         
     if not bot_vars.config_vars.loot_whites:
-        filtered_items = ItemArray.Filter.ByCondition(filtered_items, lambda item_id: not Item.Rarity.IsWhite(item_id))
+        filtered_items = ItemArray.Filter.ByCondition(filtered_items, lambda item_id: (Item.Rarity.IsWhite(item_id) == False) or Item.GetModelID(item_id) in goodies )
     if not bot_vars.config_vars.loot_blues:
         filtered_items = ItemArray.Filter.ByCondition(filtered_items, lambda item_id: not Item.Rarity.IsBlue(item_id))
     if not bot_vars.config_vars.loot_purples:
@@ -383,7 +393,6 @@ def loot_items():
             Keystroke.PressAndRelease(Key.Space.value)
         pick_up_item_timer.Reset()
         
-    
 
 def finished_looting():
     global area_distance, bot_vars
@@ -673,11 +682,17 @@ def HasThingsToSell(log = False):
 
 def DoesNeedInventoryHandling():
     global bot_vars 
+
+    bags_to_check = ItemArray.CreateBagList(1, 2, 3, 4)
+    items_in_inventory = ItemArray.GetItemArray(bags_to_check)
+
     if Inventory.GetFreeSlotCount() < bot_vars.config_vars.leave_empty_inventory_slots:
         return True
     if Inventory.GetModelCount(5899) < bot_vars.config_vars.keep_id_kit:
         return True
     if Inventory.GetModelCount(2992) < bot_vars.config_vars.keep_salvage_kit:
+        return True
+    if len(items_in_inventory) - bot_vars.config_vars.keep_id_kit - bot_vars.config_vars.keep_salvage_kit > 0:
         return True
     return HasThingsToSell()
 
@@ -867,7 +882,7 @@ def DepositItems():
     bags_to_check = ItemArray.CreateBagList(1,2,3,4)
     items_to_deposit = ItemArray.GetItemArray(bags_to_check)
 
-    banned_models = {2992,5899}
+    banned_models = {2992,5899} #salvage kit & superior id kit
     items_to_deposit = ItemArray.Filter.ByCondition(items_to_deposit, lambda item_id: Item.GetModelID(item_id) not in banned_models)
 
     total_items, total_capacity = Inventory.GetStorageSpace()
@@ -1519,8 +1534,9 @@ def BjoraRunningSkillbar():
             return
 
         #check if nearest is behind us for escaping with Heart of Shadow
-                
-        if ((HasEnoughEnergy(skillbar.heart_of_shadow) and IsEnemyBehind(enemy_array[0]) and IsSkillReady(skillbar.heart_of_shadow))
+
+        # if ((HasEnoughEnergy(skillbar.heart_of_shadow) and IsEnemyBehind(enemy_array[0]) and IsSkillReady(skillbar.heart_of_shadow))
+        if ((HasEnoughEnergy(skillbar.heart_of_shadow) and IsSkillReady(skillbar.heart_of_shadow))
             or (HasEnoughEnergy(skillbar.heart_of_shadow)
                 and FSM_vars.non_movement_timer.HasElapsed(3000))):
             CastSkill(skillbar.heart_of_shadow)
@@ -1530,7 +1546,7 @@ def BjoraRunningSkillbar():
     if (
         not HasBuff(player_agent_id, skillbar.shroud_of_distress) 
         and IsSkillReady(skillbar.shroud_of_distress)
-        and Agent.GetHealth(player_agent_id) < 0.33
+        and Agent.GetHealth(player_agent_id) < 0.5
         and HasEnoughEnergy(skillbar.shroud_of_distress) 
     ):
         CastSkill(skillbar.shroud_of_distress)
@@ -1547,13 +1563,17 @@ def FarmingSkillbar():
     player_agent_id = Player.GetAgentID()
     player_x, player_y = Agent.GetXY(player_agent_id)
 
-    sf_buff_remaining_time = 0
+    sf_buff_remaining_time = 0   
+    chan_buff_remaining_time = 0
+
 
     player_buffs = Effects.GetEffects(player_agent_id)
                 
     for buff in player_buffs:
         if buff.skill_id == skillbar.shadow_form:
             sf_buff_remaining_time = buff.time_remaining
+        if buff.skill_id == skillbar.channeling:
+            chan_buff_remaining_time = buff.time_remaining
 
     #combat routine
     if FSM_vars.in_killing_routine:
@@ -1629,19 +1649,12 @@ def FarmingSkillbar():
         return
 
     #keep Channeling up
-    if (
-        not HasBuff(player_agent_id, skillbar.channeling)
-        and IsSkillReady(skillbar.channeling)
-        and HasEnoughEnergy(skillbar.channeling)
-    ):
+    if (chan_buff_remaining_time < 3500 and IsSkillReady(skillbar.channeling) and HasEnoughEnergy(skillbar.channeling)):
         CastSkill(skillbar.channeling)
         return
 
     #keep Way of Perfection up
-    if (
-        IsSkillReady(skillbar.way_of_perfection)
-        and HasEnoughEnergy(skillbar.way_of_perfection)
-    ): 
+    if (IsSkillReady(skillbar.way_of_perfection)and HasEnoughEnergy(skillbar.way_of_perfection)): 
         CastSkill(skillbar.way_of_perfection)
         return
 
