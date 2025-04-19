@@ -10,8 +10,9 @@ lockpick = 22751
 black_dye = 10
 white_dye = 12
 victory_token = 18345
+honeycomb = 26784
 
-goodies = [cupcake, golden_egg, lockpick, black_dye, white_dye, victory_token]
+goodies = [cupcake, golden_egg, lockpick, black_dye, white_dye, victory_token, honeycomb]
 
 
 outpost_coord_list = [(-24380, 15074), (-26375, 16180)]
