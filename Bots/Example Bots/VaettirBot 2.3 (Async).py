@@ -114,27 +114,28 @@ class ConfigVarsClass:
         self.id_blues = True
         self.id_purples = True
         self.id_golds = True
-        self.salvage_whites = True
-        self.salvage_blues = True
-        self.salvage_purples = True
-        self.salvage_golds = False
+        self.salvage_whites = False
+        self.salvage_blues = False
+        self.salvage_purples = False
+        self.salvage_golds = True
+        self.salvage_goodies = False
         self.salvage_glacial_stones = False
         self.salvage_purple_with_sup_kit = False
-        self.salvage_gold_with_sup_kit = False
+        self.salvage_gold_with_sup_kit = True
         self.sell_whites = True
         self.sell_blues = True
         self.sell_purples = True
-        self.sell_golds = False
+        self.sell_golds = True
         self.sell_materials = True
         self.sell_wood = True
-        self.sell_iron = True
+        self.sell_iron = False
         self.sell_dust = True
         self.sell_bones = True
         self.sell_cloth = True
         self.sell_granite = True
         self.keep_id_kit = 2
         self.keep_salvage_kit = 0
-        self.keep_sup_salvage_kit = 0
+        self.keep_sup_salvage_kit = 1
         self.keep_gold_amount = 5000
         self.leave_empty_inventory_slots = 2
 
@@ -164,6 +165,7 @@ class StateMachineVars:
         def __init__(self):
             self.state_machine = FSM("Main")
             self.sell_to_vendor = FSM("SellToVendor")
+            self.salvage = FSM("Salvage")
             self.outpost_pathing = Routines.Movement.PathHandler(outpost_coord_list)
             self.bjora_pathing = Routines.Movement.PathHandler(bjora_coord_list)
             self.bounty_npc = Routines.Movement.PathHandler(take_bounty_coord_list)
@@ -511,19 +513,44 @@ def filter_identify_array():
         unidentified_items = ItemArray.Filter.ByCondition(unidentified_items, lambda item_id: not Item.Rarity.IsGold(item_id))          
     return unidentified_items
 
+def RequestInventoryNames():
+    bags_to_check = ItemArray.CreateBagList(1,2,3,4)
+    for item in ItemArray.GetItemArray(bags_to_check):
+        Item.RequestName(item)
+
+def LogInventoryNames():
+    bags_to_check = ItemArray.CreateBagList(1,2,3,4)
+    for item_id in ItemArray.GetItemArray(bags_to_check):
+        Py4GW.Console.Log("Salvage", f"Item name {Item.GetName(item_id)}", Py4GW.Console.MessageType.Info)
+
 def filter_salvage_array():
     global bot_vars
     bags_to_check = ItemArray.CreateBagList(1,2,3,4)
-    salvageable_items = ItemArray.GetItemArray(bags_to_check)
-    salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: Item.Usage.IsIdentified(item_id))
-    salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: Item.Usage.IsSalvageable(item_id))
+    all_items = ItemArray.GetItemArray(bags_to_check)
+    all_items = ItemArray.Filter.ByCondition(all_items, lambda item_id: Item.Usage.IsIdentified(item_id))
+    all_items = ItemArray.Filter.ByCondition(all_items, lambda item_id: Item.Usage.IsSalvageable(item_id))
+    salvageable_items = []
 
-    if not bot_vars.config_vars.salvage_blues:
-        salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsBlue(item_id))
-    if not bot_vars.config_vars.salvage_purples:
-        salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsPurple(item_id))
-    if not bot_vars.config_vars.salvage_golds:
-        salvageable_items = ItemArray.Filter.ByCondition(salvageable_items, lambda item_id: not Item.Rarity.IsGold(item_id) or " of the " in Item.GetName(item_id))
+    if bot_vars.config_vars.salvage_blues:
+        for item in all_items:
+            if Item.Rarity.IsBlue(item):
+                salvageable_items.append(item)
+        Py4GW.Console.Log("Salvage", f"Appended blue items to salvage list. Total: {len(salvageable_items)}", Py4GW.Console.MessageType.Info)
+
+
+    if bot_vars.config_vars.salvage_purples:
+        for item in all_items:
+            if Item.Rarity.IsPurple(item):
+                salvageable_items.append(item)
+        Py4GW.Console.Log("Salvage", f"Appended purple items to salvage list. Total: {len(salvageable_items)}", Py4GW.Console.MessageType.Info)
+
+
+    if bot_vars.config_vars.salvage_golds:
+        for item in all_items:
+            if Item.Rarity.IsGold(item) and " of the " not in Item.GetName(item):
+                salvageable_items.append(item)
+        Py4GW.Console.Log("Salvage", f"Appended gold items to salvage list. Total: {len(salvageable_items)}", Py4GW.Console.MessageType.Info)
+
     return salvageable_items
 
 
@@ -612,7 +639,7 @@ def IsSkillBarLoaded():
     return True
     
 #region inventory
-def HasThingsToSell(log = False):
+def HasThingsToSell(log = True):
     global bot_vars
 
     # Create a list of bags to check
@@ -669,7 +696,7 @@ def HasThingsToSell(log = False):
             Py4GW.Console.Log(bot_vars.window_module.module_name, f"{current_function} - After filtering purples: {items_to_sell}", Py4GW.Console.MessageType.Info)
 
     if not bot_vars.config_vars.sell_golds:
-        items_to_sell = ItemArray.Filter.ByCondition(items_to_sell, lambda item_id: not Item.Rarity.IsGold(item_id))
+        items_to_sell = ItemArray.Filter.ByCondition(items_to_sell, lambda item_id: not Item.Rarity.IsGold(item_id) or " of the " in Item.GetName(item_id))
         if log:
             Py4GW.Console.Log(bot_vars.window_module.module_name, f"{current_function} - After filtering golds: {items_to_sell}", Py4GW.Console.MessageType.Info)
 
@@ -724,10 +751,14 @@ def salvage_item(item_id):
     if salvage_kit == 0:
         return
     Inventory.SalvageItem(item_id, salvage_kit)
+
     
 def salvage_items():
     global bot_vars
     salvageable_items = filter_salvage_array()
+
+    Py4GW.Console.Log("Salvage", f"Salvaging {len(salvageable_items)} items", Py4GW.Console.MessageType.Info)
+
     if len(salvageable_items) == 0:
         return
     
@@ -989,12 +1020,20 @@ FSM_vars.sell_to_vendor.AddState(name="Go to Merchant",
                         execute_fn=lambda: Routines.Movement.FollowPath(FSM_vars.path_to_merchant, FSM_vars.movement_handler),
                         exit_condition=lambda: Routines.Movement.IsFollowPathFinished(FSM_vars.path_to_merchant, FSM_vars.movement_handler),
                         run_once=False)
+FSM_vars.sell_to_vendor.AddState(name="Request item names",
+                        execute_fn=lambda: RequestInventoryNames(),
+                        run_once=True,
+                        transition_delay_ms=1000)
 FSM_vars.sell_to_vendor.AddState(name="Target Merchant",
                         execute_fn=lambda: TargetNearestNPCXY(x=-23100,y=14900),
                         transition_delay_ms=1000)
 FSM_vars.sell_to_vendor.AddState(name="InteractMerchant",
                         execute_fn=lambda: Routines.Targeting.InteractTarget(),
                         exit_condition=lambda: Routines.Targeting.HasArrivedToTarget())
+FSM_vars.sell_to_vendor.AddState(name="Log item names",
+                        execute_fn=lambda: LogInventoryNames(),
+                        run_once=True,
+                        transition_delay_ms=1000)
 FSM_vars.sell_to_vendor.AddState(name="Sell Materials to make Space",
                         execute_fn=lambda: SellMaterials(),
                         run_once=True,
@@ -1011,10 +1050,14 @@ FSM_vars.sell_to_vendor.AddState(name="Identify routine",
                         execute_fn=lambda: identify_items(),
                         run_once=True,
                         exit_condition=lambda: finished_identifying())
-FSM_vars.sell_to_vendor.AddState(name="Salvage routine",
-                        execute_fn=lambda: salvage_items(),
-                        run_once=True,
-                        exit_condition=lambda: finished_salvaging())
+
+# FSM_vars.sell_to_vendor.AddSubroutine(name="Salvage handling",
+#                        sub_fsm = FSM_vars.salvage,
+#                        condition_fn=lambda: DoesNeedSalvaging())
+# FSM_vars.sell_to_vendor.AddState(name="Salvage routine",
+#                         execute_fn=lambda: salvage_items(),
+#                         run_once=True,
+#                         exit_condition=lambda: finished_salvaging())
 FSM_vars.sell_to_vendor.AddState(name="Sell Materials",
                         execute_fn=lambda: SellMaterials(),
                         run_once=True,
@@ -1024,8 +1067,20 @@ FSM_vars.sell_to_vendor.AddState(name="Deposit Items",
                         run_once=True,
                         exit_condition=lambda: DepositItemsComplete())
 
-                        
-
+# FSM_vars.salvage.AddState(name="Salvage ping check 1",
+#                 execute_fn=lambda: salvager_ping_check_1(),
+#                 exit_condition=lambda: CheckPingContinue(),
+#                 run_once=False)
+# FSM_vars.salvage.AddState(name="Salvage start",
+#                 execute_fn=lambda: StartSalvage(),
+#                 transition_delay_ms=150)
+# FSM_vars.salvage.AddState(name="Salvage ping check 2",
+#                 execute_fn=lambda: salvager_ping_check_1(),
+#                 exit_condition=lambda: CheckPingContinue(),
+#                 run_once=False)
+# FSM_vars.salvage.AddState("Salvage finish",
+#                 execute_fn=lambda: EndSalvageLoop(),
+                # transition_delay_ms=150)                      
 
 #MAIN STATE MACHINE CONFIGURATION
 FSM_vars.state_machine.AddState(name="Longeyes Ledge Map Check", 
@@ -1105,10 +1160,10 @@ FSM_vars.state_machine.AddState(name="Identify routine",
                        execute_fn=lambda: identify_items(),
                        run_once=True,
                        exit_condition=lambda: finished_identifying())
-FSM_vars.state_machine.AddState(name="Salvage routine",
-                        execute_fn=lambda: salvage_items(),
-                        run_once=True,
-                        exit_condition=lambda: finished_salvaging())
+# FSM_vars.state_machine.AddState(name="Salvage routine",
+#                         execute_fn=lambda: salvage_items(),
+#                         run_once=True,
+#                         exit_condition=lambda: finished_salvaging())
 FSM_vars.state_machine.AddState(name="Need to return to Outpost?",
                        execute_fn=lambda: handle_end_state_machine(),
                        exit_condition=lambda: InventoryCheck())
@@ -1136,6 +1191,106 @@ FSM_vars.state_machine.AddState(name="End State Machine Loop",
                        transition_delay_ms=1000)
 
 #enregion 
+
+#region SALVAGE
+current_salvage = 0
+current_ping = 0
+salvage_Items = []
+ping_timer = Timer()
+current_salvage = 0
+current_quantity = 0
+salvage_kit = False
+confirmed = False
+pending_stop = False
+finished = False
+
+def DoesNeedSalvaging():
+    global bot_vars, current_salvage, salvage_items, finished
+    salvage_Items = filter_salvage_array()
+    current_salvage = 0
+    finished = False
+    
+    return len(salvage_Items) != 0
+
+def StartSalvage():
+    global current_salvage, salvage_Items, current_quantity, confirmed, salvage_kit
+    kitId = Inventory.GetFirstSalvageKit()
+    salvage_Items = filter_salvage_array()
+        
+    if kitId == 0:
+        salvage_kit = False
+        confirmed = False
+        Py4GW.Console.Log("DEBUG", f"NO KIT FOUND", Py4GW.Console.MessageType.Error)
+        return
+    
+    salvage_kit = True
+
+    if current_salvage == 0 and salvage_Items and isinstance(salvage_Items, list) and len(salvage_Items) > 0:            
+        current_salvage = salvage_Items.pop(0)
+        current_quantity = Item.Properties.GetQuantity(current_salvage)
+    else:
+        Py4GW.Console.Log("DEBUG", f"{current_salvage}{isinstance(salvage_Items, list)}{len(salvage_Items)}", Py4GW.Console.MessageType.Error)
+
+
+    if current_salvage == 0:
+        Py4GW.Console.Log("DEBUG", f"CURRENT SALVAGE = 0", Py4GW.Console.MessageType.Error)
+        return False  
+
+    Inventory.SalvageItem(current_salvage, kitId)
+
+def salvager_ping_check_1():
+    global current_ping
+    current_ping = Py4GW.PingHandler().GetCurrentPing()
+
+def CheckPingContinue():
+    global ping_timer, current_ping
+
+    if ping_timer:
+        if not ping_timer.IsRunning():
+            ping_timer.Start()
+
+        # Py4GW.Console.Log("DEBUG", f"current  ping {ping_timer.GetElapsedTime()}", Py4GW.Console.MessageType.Error)
+
+        if not ping_timer.HasElapsed(1000):
+            return False
+        
+        ping_timer.Stop()
+    return True
+
+def EndSalvageLoop():
+    global salvage_kit, pending_stop, finished
+
+    Inventory.AcceptSalvageMaterialsWindow()
+
+    if not salvage_kit or pending_stop:
+        return
+    
+    if not IsFinishedSalvage():
+        FSM_vars.salvage.jump_to_state_by_name("Salvage ping check 1")
+    else:
+        finished = True 
+        ping_timer.Stop()
+    
+    return
+
+def IsFinishedSalvage():
+    global current_salvage, current_quantity, salvage_kit
+    if current_salvage != 0:
+        current_quantity -= 1
+
+        if current_quantity <= 0:
+            current_salvage = 0
+    
+    kitId = Inventory.GetFirstSalvageKit()
+    
+    if kitId == 0:
+        salvage_kit = False
+        return True
+
+    return len(salvage_Items) == 0
+
+
+#endregion 
 
 #region SkillCasting
 
@@ -1857,6 +2012,7 @@ def DrawWindow():
                     bot_vars.config_vars.salvage_blues = PyImGui.checkbox("Salvage Blues", bot_vars.config_vars.salvage_blues)
                     bot_vars.config_vars.salvage_purples = PyImGui.checkbox("Salvage Purples", bot_vars.config_vars.salvage_purples)
                     bot_vars.config_vars.salvage_golds = PyImGui.checkbox("Salvage Golds", bot_vars.config_vars.salvage_golds)
+                    bot_vars.config_vars.salvage_goodies = PyImGui.checkbox("Salvage Goodies", bot_vars.config_vars.salvage_goodies)
                     PyImGui.tree_pop()
 
                 # Sell Section
